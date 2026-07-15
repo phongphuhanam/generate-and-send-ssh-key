@@ -7,6 +7,7 @@ FILENAME=~/.ssh/id_test
 KEYTYPE=rsa
 HOST=host
 USER=${USER}
+JUMPHOST=
 
 # use "-p <port>" if the ssh-server is listening on a different port
 SSH_OPTS="-o PubkeyAuthentication=no"
@@ -23,6 +24,7 @@ function usage() {
     echo "  -h (--host)       <hostname>, default: ${HOST}"
 
     echo "  -p (--port)       <port>,     default: <default ssh port>"
+    echo "  -j (--jumphost)   <jumphost>, default: <none>, e.g. 'user@jumphost' or 'user@jumphost:port'"
     echo "  -k (--keysize)    <size>,     default: ${KEYSIZE}"
     echo "  -t (--keytype)    <type>,     default: ${KEYTYPE}, typical values are 'rsa' or 'ed25519'"
 
@@ -56,6 +58,10 @@ do
 			SSH_OPTS="${SSH_OPTS} -p $1"
 			shift
 			;;
+		-j*|--jumphost)
+			JUMPHOST="$1"
+			shift
+			;;
 		-k*|--keysize)
 			KEYSIZE="$1"
 			shift
@@ -74,6 +80,10 @@ do
 			;;
 	esac
 done
+
+if [ -n "${JUMPHOST}" ];then
+	SSH_OPTS="${SSH_OPTS} -J ${JUMPHOST}"
+fi
 
 echo
 echo "Transferring key from ${FILENAME} to ${USER}@${HOST} using options '${SSH_OPTS}', keysize ${KEYSIZE} and keytype: ${KEYTYPE}"
