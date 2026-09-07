@@ -91,6 +91,18 @@ do
 	esac
 done
 
+# resolve the key filename to an absolute, real path so ~/.ssh/config gets a stable, unambiguous path
+if command -v realpath >/dev/null 2>&1;then
+    RESOLVED_KEY=$(realpath -m "${FILENAME}")
+elif command -v readlink >/dev/null 2>&1;then
+    RESOLVED_KEY=$(readlink -f "${FILENAME}")
+else
+    RESOLVED_KEY="${FILENAME}"
+fi
+if [ -n "${RESOLVED_KEY}" ];then
+    FILENAME="${RESOLVED_KEY}"
+fi
+
 if [ -n "${JUMPHOST}" ];then
 	SSH_OPTS="${SSH_OPTS} -J ${JUMPHOST}"
 fi
