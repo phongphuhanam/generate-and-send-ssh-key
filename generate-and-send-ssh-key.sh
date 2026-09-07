@@ -6,8 +6,11 @@ PASSPHRASE=
 FILENAME=~/.ssh/id_test
 KEYTYPE=ed25519
 HOST=host
+PORT=
 USER=${USER}
 JUMPHOST=
+# set with --add-to-ssh-config to also register a fast-connection alias in ~/.ssh/config
+SSH_CONFIG_NAME=
 
 # use "-p <port>" if the ssh-server is listening on a different port
 SSH_OPTS="-o PubkeyAuthentication=no"
@@ -29,6 +32,8 @@ function usage() {
     echo "  -t (--keytype)    <type>,     default: ${KEYTYPE}, typical values are 'rsa' or 'ed25519'"
 
     echo "  -P (--passphrase) <key-passphrase>, default: ${PASSPHRASE}"
+
+    echo "      (--add-to-ssh-config) <config-name>, default: <none>, appends a 'Host <config-name>' block to ~/.ssh/config"
 
     exit 2
 }
@@ -55,6 +60,7 @@ do
 			shift
 			;;
 		-p*|--port)
+			PORT="$1"
 			SSH_OPTS="${SSH_OPTS} -p $1"
 			shift
 			;;
@@ -72,6 +78,10 @@ do
 			;;
 		-P*|--passphrase)
 			PASSPHRASE="$1"
+			shift
+			;;
+		--add-to-ssh-config)
+			SSH_CONFIG_NAME="$1"
 			shift
 			;;
 		*)
@@ -164,6 +174,35 @@ RET=$?
 if [ ${RET} -ne 0 ];then
     echo ssh-chmod failed: ${RET}
     exit 1
+fi
+
+# optionally register the new connection in ~/.ssh/config for a fast 'ssh <name>' alias
+if [ -n "${SSH_CONFIG_NAME}" ];then
+    echo
+    SSH_CONFIG_FILE="${HOME}/.ssh/config"
+
+    # 1) the key must actually exist before we register it
+    if [ ! -f "${FILENAME}" ];then
+        echo Warning: key file ${FILENAME} not found, skipping ~/.ssh/config update
+    # 2) skip if this exact key (IdentityFile) is already configured
+    elif grep -qE "^[[:space:]]*IdentityFile[[:space:]]+${FILENAME}[[:space:]]*$" "${SSH_CONFIG_FILE}" 2>/dev/null;then
+        echo "A config entry already references this key (${FILENAME}), not appending a duplicate"
+    # 3) skip if a Host block with this name already exists
+    elif grep -qE "^[[:space:]]*Host[[:space:]]+${SSH_CONFIG_NAME}[[:space:]]*$" "${SSH_CONFIG_FILE}" 2>/dev/null;then
+        echo A 'Host ${SSH_CONFIG_NAME}' block already exists in ${SSH_CONFIG_FILE}, leaving it unchanged
+    else
+        echo Registering host '${SSH_CONFIG_NAME}' in ~/.ssh/config
+        {
+            echo
+            echo "Host ${SSH_CONFIG_NAME}"
+            echo "    HostName ${HOST}"
+            [ -n "${PORT}" ] && echo "    Port ${PORT}"
+            echo "    User ${USER}"
+            echo "    IdentityFile ${FILENAME}"
+            [ -n "${JUMPHOST}" ] && echo "    ProxyJump ${JUMPHOST}"
+        } >> "${SSH_CONFIG_FILE}"
+        echo Done, you can now simply run: ssh ${SSH_CONFIG_NAME}
+    fi
 fi
 
 # Cut out PubKeyAuth=no here as it should work without it now
