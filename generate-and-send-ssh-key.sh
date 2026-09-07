@@ -92,13 +92,32 @@ do
 done
 
 # resolve the key filename to an absolute, real path so ~/.ssh/config gets a stable, unambiguous path
-if command -v realpath >/dev/null 2>&1;then
-    RESOLVED_KEY=$(realpath -m "${FILENAME}")
-elif command -v readlink >/dev/null 2>&1;then
-    RESOLVED_KEY=$(readlink -f "${FILENAME}")
-else
-    RESOLVED_KEY="${FILENAME}"
-fi
+# works for paths that do not exist yet, and on GNU (realpath -m) / macOS (python3 or grealpath) alike
+resolve_key_path() {
+    local path="$1" out
+    if command -v realpath >/dev/null 2>&1;then
+        out=$(realpath -m "$path" 2>/dev/null) && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    fi
+    if command -v grealpath >/dev/null 2>&1;then
+        out=$(grealpath -m "$path" 2>/dev/null) && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    fi
+    if command -v python3 >/dev/null 2>&1;then
+        out=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$path" 2>/dev/null) && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    fi
+    if command -v readlink >/dev/null 2>&1;then
+        out=$(readlink -f "$path" 2>/dev/null) && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    fi
+    # last resort, pure bash: make it absolute if its directory already exists
+    if [[ "$path" == */* ]];then
+        local dir="${path%/*}" base="${path##*/}"
+        out=$( cd "$dir" >/dev/null 2>&1 && pwd -P )
+        if [ -n "$out" ];then
+            printf '%s/%s\n' "$out" "$base"; return 0
+        fi
+    fi
+    return 1
+}
+RESOLVED_KEY=$(resolve_key_path "${FILENAME}")
 if [ -n "${RESOLVED_KEY}" ];then
     FILENAME="${RESOLVED_KEY}"
 fi
