@@ -118,62 +118,65 @@ fi
 echo
 # perform the actual work
 if [ -f "${FILENAME}" ];then
-    echo Using existing key
+    echo "Using existing key ${FILENAME} - key already present, skipping key creation and upload"
+    if [ -z "${SSH_CONFIG_NAME}" ];then
+        echo "Note: nothing else to do. Pass --add-to-ssh-config <name> to register it in ~/.ssh/config"
+    fi
 else
-    echo Creating a new key using ${SSH-KEYGEN}
+    echo "Creating a new key using ${SSH_KEYGEN}"
     ${SSH_KEYGEN} -t $KEYTYPE -b $KEYSIZE  -f "${FILENAME}" -N "${PASSPHRASE}"
     RET=$?
     if [ ${RET} -ne 0 ];then
-        echo ssh-keygen failed: ${RET}
+        echo "ssh-keygen failed: ${RET}"
         exit 1
     fi
-fi
 
-if [ ! -f "${FILENAME}.pub" ];then
-    echo Did not find the expected public key at ${FILENAME}.pub
-    exit 1
-fi
+    if [ ! -f "${FILENAME}.pub" ];then
+        echo "Did not find the expected public key at ${FILENAME}.pub"
+        exit 1
+    fi
 
-echo
-echo Having key-information
-ssh-keygen -l -f "${FILENAME}"
+    echo
+    echo "Having key-information"
+    ssh-keygen -l -f "${FILENAME}"
 
-echo
-echo Adjust permissions of generated key-files locally
-chmod 0600 "${FILENAME}" "${FILENAME}.pub"
-RET=$?
-if [ ${RET} -ne 0 ];then
-    echo chmod failed: ${RET}
-    exit 1
-fi
-
-echo
-echo Copying the key to the remote machine ${USER}@${HOST}, this usually will ask for the password
-if [ -z "${SSH_COPY_ID}" ];then
-    echo Could not find the 'ssh-copy-id' executable, using manual copy instead
-    cat "${FILENAME}.pub" | ssh ${SSH_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
-else
-    ${SSH_COPY_ID} ${SSH_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+    echo
+    echo "Adjust permissions of generated key-files locally"
+    chmod 0600 "${FILENAME}" "${FILENAME}.pub"
     RET=$?
     if [ ${RET} -ne 0 ];then
-      echo Executing ssh-copy-id via ${SSH_COPY_ID} failed, trying to manually copy the key-file instead
-      cat "${FILENAME}.pub" | ssh ${SSH_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
+        echo "chmod failed: ${RET}"
+        exit 1
     fi
-fi
 
-RET=$?
-if [ ${RET} -ne 0 ];then
-    echo ssh-copy-id failed: ${RET}
-    exit 1
-fi
+    echo
+    echo "Copying the key to the remote machine ${USER}@${HOST}, this usually will ask for the password"
+    if [ -z "${SSH_COPY_ID}" ];then
+        echo "Could not find the 'ssh-copy-id' executable, using manual copy instead"
+        cat "${FILENAME}.pub" | ssh ${SSH_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
+    else
+        ${SSH_COPY_ID} ${SSH_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+        RET=$?
+        if [ ${RET} -ne 0 ];then
+            echo "Executing ssh-copy-id via ${SSH_COPY_ID} failed, trying to manually copy the key-file instead"
+            cat "${FILENAME}.pub" | ssh ${SSH_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
+        fi
+    fi
 
-echo
-echo Adjusting permissions to avoid errors in ssh-daemon, this may ask once more for the password
-${SSH} ${SSH_OPTS} ${USER}@${HOST} "chmod go-w ~ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
-RET=$?
-if [ ${RET} -ne 0 ];then
-    echo ssh-chmod failed: ${RET}
-    exit 1
+    RET=$?
+    if [ ${RET} -ne 0 ];then
+        echo "ssh-copy-id failed: ${RET}"
+        exit 1
+    fi
+
+    echo
+    echo "Adjusting permissions to avoid errors in ssh-daemon, this may ask once more for the password"
+    ${SSH} ${SSH_OPTS} ${USER}@${HOST} "chmod go-w ~ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+    RET=$?
+    if [ ${RET} -ne 0 ];then
+        echo "ssh-chmod failed: ${RET}"
+        exit 1
+    fi
 fi
 
 # optionally register the new connection in ~/.ssh/config for a fast 'ssh <name>' alias
@@ -191,7 +194,7 @@ if [ -n "${SSH_CONFIG_NAME}" ];then
     elif grep -qE "^[[:space:]]*Host[[:space:]]+${SSH_CONFIG_NAME}[[:space:]]*$" "${SSH_CONFIG_FILE}" 2>/dev/null;then
         echo A 'Host ${SSH_CONFIG_NAME}' block already exists in ${SSH_CONFIG_FILE}, leaving it unchanged
     else
-        echo Registering host '${SSH_CONFIG_NAME}' in ~/.ssh/config
+        echo "Registering host '${SSH_CONFIG_NAME}' in ~/.ssh/config"
         {
             echo
             echo "Host ${SSH_CONFIG_NAME}"
