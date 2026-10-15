@@ -232,7 +232,15 @@ else
         echo "Could not find the 'ssh-copy-id' executable, using manual copy instead"
         cat "${FILENAME}.pub" | ssh ${SSH_TRANSFER_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
     else
-        ${SSH_COPY_ID} ${SSH_TRANSFER_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+        if [ -n "${AUTHKEY}" ];then
+            # ssh-copy-id logs in with every identity it was given before installing, to drop
+            # keys that are already there. With --auth-key that login succeeds via the bootstrap
+            # key, so a key that is NOT installed yet is skipped and nothing is uploaded. -f
+            # skips that check so the key is really appended.
+            ${SSH_COPY_ID} -f ${SSH_TRANSFER_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+        else
+            ${SSH_COPY_ID} ${SSH_TRANSFER_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+        fi
         RET=$?
         if [ ${RET} -ne 0 ];then
             echo "Executing ssh-copy-id via ${SSH_COPY_ID} failed, trying to manually copy the key-file instead"
@@ -257,6 +265,21 @@ else
     if [ ${RET} -ne 0 ];then
         echo "ssh-chmod failed: ${RET}"
         exit 1
+    fi
+
+    # ssh-copy-id only reports that it *tried* to install a key, so check that the key really
+    # ended up in the remote authorized_keys. The blob (type + base64) is compared, the comment
+    # at the end of the line is ignored, just like ssh-copy-id does it.
+    echo
+    KEY_BLOB=$(awk '{print $1" "$2}' "${FILENAME}.pub")
+    if [ -z "${KEY_BLOB}" ];then
+        echo "Could not read the key blob from ${FILENAME}.pub, cannot verify"
+    elif ${SSH} ${SSH_TRANSFER_OPTS} ${USER}@${HOST} "grep -Fc '${KEY_BLOB}' ~/.ssh/authorized_keys" >/dev/null 2>&1;then
+        echo "Verified: the key is present in ~/.ssh/authorized_keys on ${USER}@${HOST}"
+    else
+        echo "Not found in ~/.ssh/authorized_keys on ${USER}@${HOST} - the key was not installed,"
+        echo "check the sshd config (AuthorizedKeysFile), the home-directory permissions, or whether"
+        echo "the login landed on a different account/directory than expected"
     fi
 fi
 

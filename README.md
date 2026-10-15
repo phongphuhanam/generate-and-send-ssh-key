@@ -57,6 +57,26 @@ the transfer, the key that gets created/installed is still the one from `--file`
 Note that `ssh-copy-id` uses `-i` for the key being installed, so the bootstrap key is passed on as
 `-o IdentityFile=` internally.
 
+### "All keys were skipped because they already exist on the remote system"
+
+That `ssh-copy-id` warning is not an error. It logs in with the key first, and if the login works it
+assumes the key is already installed and uploads nothing. The script now checks the remote
+`authorized_keys` itself and prints either "Verified: the key is present" or "Not found", so the
+warning alone no longer decides whether you are done.
+
+With `--auth-key` the warning is misleading: the login succeeds through the bootstrap key, so
+`ssh-copy-id` skips a key that is not installed yet. The script passes `-f` in that case, which
+skips the check and appends the key.
+
+To change only the marker on a key that is already installed, rewrite that one line on the remote
+instead of re-uploading (fetch, edit locally, push back):
+
+    ssh <host> 'cat ~/.ssh/authorized_keys' > /tmp/ak
+    KEY=$(awk '{print $1" "$2}' <key>.pub)
+    awk -v k="$KEY" -v c="you@example.com" '{ if (index($0,k)) printf "%s %s\n", k, c; else print }' \
+        /tmp/ak > /tmp/ak.new
+    cat /tmp/ak.new | ssh <host> 'cat > ~/.ssh/authorized_keys'
+
 ### The marker at the end of the key
 
 A public key is `<type> <base64> <comment>`, and that last field is copied verbatim into the remote
