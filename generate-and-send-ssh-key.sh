@@ -19,6 +19,10 @@ SSH_OPTS="-o PubkeyAuthentication=no"
 # authorized on the target instead of typing the remote password
 AUTHKEY=
 
+# set with -c/--comment to put a custom marker (e.g. an email) at the end of the public key
+# and thus in the remote authorized_keys; empty means ssh-keygen's own default
+KEYCOMMENT=
+
 #
 # NO MORE CONFIG SETTING BELOW THIS LINE
 #
@@ -38,6 +42,8 @@ function usage() {
     echo "  -P (--passphrase) <key-passphrase>, default: ${PASSPHRASE}"
 
     echo "  -a (--auth-key)   <existing key already authorized on the target>, default: <none, asks for password>"
+
+    echo "  -c (--comment)    <comment for the public key>, default: <ssh-keygen default, i.e. user@host>"
 
     echo "      (--add-to-ssh-config) <config-name>, default: <none>, appends a 'Host <config-name>' block to ~/.ssh/config"
 
@@ -95,6 +101,10 @@ do
 			AUTHKEY="$1"
 			shift
 			;;
+		-c*|--comment)
+			KEYCOMMENT="$1"
+			shift
+			;;
 		*)
 			# unknown option
 			usage "unknown parameter: $key, "
@@ -150,6 +160,14 @@ if [ -n "${AUTHKEY}" ];then
     SSH_TRANSFER_OPTS="-o IdentityFile=${AUTHKEY} ${SSH_OPTS/-o PubkeyAuthentication=no/}"
 fi
 
+# ssh-keygen options for the key creation. -C is only passed when a comment was requested,
+# passing an empty one would strip the marker entirely. Kept as an array so that comments
+# with spaces survive.
+KEYGEN_OPTS=()
+if [ -n "${KEYCOMMENT}" ];then
+    KEYGEN_OPTS=(-C "${KEYCOMMENT}")
+fi
+
 echo
 echo "Transferring key from ${FILENAME} to ${USER}@${HOST} using options '${SSH_TRANSFER_OPTS}', keysize ${KEYSIZE} and keytype: ${KEYTYPE}"
 echo
@@ -178,8 +196,8 @@ if [ -f "${FILENAME}" ];then
         echo "Note: nothing else to do. Pass --add-to-ssh-config <name> to register it in ~/.ssh/config"
     fi
 else
-    echo "Creating a new key using ${SSH_KEYGEN}"
-    ${SSH_KEYGEN} -t $KEYTYPE -b $KEYSIZE  -f "${FILENAME}" -N "${PASSPHRASE}"
+    echo "Creating a new key using ${SSH_KEYGEN}, comment: '${KEYCOMMENT:-<ssh-keygen default>}'"
+    ${SSH_KEYGEN} -t $KEYTYPE -b $KEYSIZE -f "${FILENAME}" -N "${PASSPHRASE}" "${KEYGEN_OPTS[@]}"
     RET=$?
     if [ ${RET} -ne 0 ];then
         echo "ssh-keygen failed: ${RET}"

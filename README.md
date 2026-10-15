@@ -37,6 +37,7 @@ where it should be sent to:
     
     -P(--passphrase) <key-passphrase>, default: <empty>
     -a (--auth-key)  <key already authorized on the target>, default: <none, asks for password>
+    -c (--comment)   <marker for the public key>, default: <ssh-keygen default, i.e. user@host>
 
 You should at least set `--user`, `--file`, and `--host`.  
 
@@ -55,6 +56,20 @@ the transfer, the key that gets created/installed is still the one from `--file`
 
 Note that `ssh-copy-id` uses `-i` for the key being installed, so the bootstrap key is passed on as
 `-o IdentityFile=` internally.
+
+### The marker at the end of the key
+
+A public key is `<type> <base64> <comment>`, and that last field is copied verbatim into the remote
+`authorized_keys`. It is a free-form label only - ssh never reads it, and no email is looked up
+anywhere. By default `ssh-keygen` writes `user@host` of the machine where the key was created, so
+pass `--comment` if you would rather see something like your email or a nickname there:
+
+    ./generate-and-send-ssh-key.sh --user bob --host myhost -c "bob@example.com"
+
+This only applies to keys that are created by the script; an existing key keeps its current comment.
+To change that one in place, without touching the key material itself, run
+
+    ssh-keygen -c -C "bob@example.com" -f ~/.ssh/id_test
 
 ### Enjoy
 
