@@ -15,6 +15,10 @@ SSH_CONFIG_NAME=
 # use "-p <port>" if the ssh-server is listening on a different port
 SSH_OPTS="-o PubkeyAuthentication=no"
 
+# set with -a/--auth-key to authenticate the transfer with an existing key that is already
+# authorized on the target instead of typing the remote password
+AUTHKEY=
+
 #
 # NO MORE CONFIG SETTING BELOW THIS LINE
 #
@@ -32,6 +36,8 @@ function usage() {
     echo "  -t (--keytype)    <type>,     default: ${KEYTYPE}, typical values are 'rsa' or 'ed25519'"
 
     echo "  -P (--passphrase) <key-passphrase>, default: ${PASSPHRASE}"
+
+    echo "  -a (--auth-key)   <existing key already authorized on the target>, default: <none, asks for password>"
 
     echo "      (--add-to-ssh-config) <config-name>, default: <none>, appends a 'Host <config-name>' block to ~/.ssh/config"
 
@@ -84,6 +90,11 @@ do
 			SSH_CONFIG_NAME="$1"
 			shift
 			;;
+		# keep this after --add-to-ssh-config, otherwise '-a*' would also match that option
+		-a*|--auth-key)
+			AUTHKEY="$1"
+			shift
+			;;
 		*)
 			# unknown option
 			usage "unknown parameter: $key, "
@@ -126,8 +137,21 @@ if [ -n "${JUMPHOST}" ];then
 	SSH_OPTS="${SSH_OPTS} -J ${JUMPHOST}"
 fi
 
+# options used for the actual login to the remote host: either the remote password (pubkey
+# authentication is switched off to make that reliable) or an existing key given via --auth-key
+SSH_TRANSFER_OPTS="${SSH_OPTS}"
+if [ -n "${AUTHKEY}" ];then
+    if [ ! -f "${AUTHKEY}" ];then
+        echo "Could not find the bootstrap key ${AUTHKEY}, pass a key that already works for ${USER}@${HOST}"
+        exit 1
+    fi
+    # pass it as -o IdentityFile= rather than -i because ssh-copy-id already uses -i for
+    # the key that is being installed, and refuses -i more than once
+    SSH_TRANSFER_OPTS="-o IdentityFile=${AUTHKEY} ${SSH_OPTS/-o PubkeyAuthentication=no/}"
+fi
+
 echo
-echo "Transferring key from ${FILENAME} to ${USER}@${HOST} using options '${SSH_OPTS}', keysize ${KEYSIZE} and keytype: ${KEYTYPE}"
+echo "Transferring key from ${FILENAME} to ${USER}@${HOST} using options '${SSH_TRANSFER_OPTS}', keysize ${KEYSIZE} and keytype: ${KEYTYPE}"
 echo
 echo "Press ENTER to continue or CTRL-C to abort"
 read
@@ -181,12 +205,16 @@ else
     fi
 
     echo
-    echo "Copying the key to the remote machine ${USER}@${HOST}, this usually will ask for the password"
+    if [ -n "${AUTHKEY}" ];then
+        echo "Copying the key to the remote machine ${USER}@${HOST}, logging in with the existing key ${AUTHKEY}"
+    else
+        echo "Copying the key to the remote machine ${USER}@${HOST}, this usually will ask for the password"
+    fi
     if [ -z "${SSH_COPY_ID}" ];then
         echo "Could not find the 'ssh-copy-id' executable, using manual copy instead"
-        cat "${FILENAME}.pub" | ssh ${SSH_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
+        cat "${FILENAME}.pub" | ssh ${SSH_TRANSFER_OPTS} ${USER}@${HOST} 'cat >> ~/.ssh/authorized_keys'
     else
-        ${SSH_COPY_ID} ${SSH_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
+        ${SSH_COPY_ID} ${SSH_TRANSFER_OPTS} -i ${FILENAME}.pub ${USER}@${HOST}
         RET=$?
         if [ ${RET} -ne 0 ];then
             echo "Executing ssh-copy-id via ${SSH_COPY_ID} failed, trying to manually copy the key-file instead"
@@ -201,8 +229,12 @@ else
     fi
 
     echo
-    echo "Adjusting permissions to avoid errors in ssh-daemon, this may ask once more for the password"
-    ${SSH} ${SSH_OPTS} ${USER}@${HOST} "chmod go-w ~ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+    if [ -n "${AUTHKEY}" ];then
+        echo "Adjusting permissions to avoid errors in ssh-daemon, logging in with the existing key ${AUTHKEY}"
+    else
+        echo "Adjusting permissions to avoid errors in ssh-daemon, this may ask once more for the password"
+    fi
+    ${SSH} ${SSH_TRANSFER_OPTS} ${USER}@${HOST} "chmod go-w ~ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
     RET=$?
     if [ ${RET} -ne 0 ];then
         echo "ssh-chmod failed: ${RET}"
